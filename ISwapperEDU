@@ -1,0 +1,99 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.22;
+
+// Importamos interfaces y bibliotecas de OpenZeppelin
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+/// @title Swapper
+/// @notice Este contrato permite intercambiar dos tipos de tokens ERC20
+contract Swapper {
+    // Usamos SafeERC20 para interactuar de forma segura con los tokens
+    using SafeERC20 for IERC20;
+
+    // Declaramos las variables de estado
+    IERC20 public immutable tokenA; // El primer token para intercambiar
+    IERC20 public immutable tokenB; // El segundo token para intercambiar
+    address public immutable owner; // La dirección del propietario del contrato
+
+    // Un mapping para llevar el registro de cuántos tokenA tiene cada usuario
+    mapping(address => uint256) public balances;
+
+    // Eventos para registrar acciones importantes en la blockchain
+    event Deposit(address indexed user, uint256 amount);
+    event OwnerDeposit(uint256 amount);
+    event Swap(address indexed user, uint256 amount);
+    event Withdraw(address indexed user, uint256 amount);
+    event OwnerWithdraw(uint256 amount);
+
+    // Modificador para restringir ciertas funciones solo al propietario
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not owner");
+        _;
+    }
+
+    // Constructor: se ejecuta una vez cuando se despliega el contrato
+    constructor(IERC20 _tokenA, IERC20 _tokenB) {
+        tokenA = _tokenA;
+        tokenB = _tokenB;
+        owner = msg.sender; // La dirección que despliega el contrato es el propietario
+    }
+    
+    // Función para que los usuarios depositen tokenA
+    function deposit(uint256 amount) external {
+        require(amount > 0, "Amount must be > 0");
+        // Transferimos tokenA del usuario al contrato
+        tokenA.safeTransferFrom(msg.sender, address(this), amount);
+        // Actualizamos el saldo del usuario
+        balances[msg.sender] += amount;
+        // Emitimos un evento para registrar el depósito
+        emit Deposit(msg.sender, amount);
+    }
+
+    // Función para que el propietario deposite tokenB
+    function depositOwner(uint256 amount) external onlyOwner {
+        require(amount > 0, "Amount must be > 0");
+        // El propietario transfiere tokenB al contrato
+        tokenB.safeTransferFrom(msg.sender, address(this), amount);
+        // Emitimos un evento para registrar el depósito del propietario
+        emit OwnerDeposit(amount);
+    }
+
+    // Función para intercambiar tokenA por tokenB
+    function swap() external {
+        uint256 amount = balances[msg.sender];
+        require(amount > 0, "No balance to swap");
+        require(tokenB.balanceOf(address(this)) >= amount, "Insufficient TokenB");
+
+        // Actualizamos el saldo antes de la transferencia (importante para la seguridad)
+        balances[msg.sender] = 0;
+        // Transferimos tokenB al usuario
+        tokenB.safeTransfer(msg.sender, amount);
+        // Emitimos un evento para registrar el intercambio
+        emit Swap(msg.sender, amount);
+    }
+
+    // Función para que los usuarios retiren su tokenA
+    function withdraw() external {
+        uint256 amount = balances[msg.sender];
+        require(amount > 0, "No balance to withdraw");
+
+        // Actualizamos el saldo antes de la transferencia
+        balances[msg.sender] = 0;
+        // Transferimos tokenA al usuario
+        tokenA.safeTransfer(msg.sender, amount);
+        // Emitimos un evento para registrar el retiro
+        emit Withdraw(msg.sender, amount);
+    }
+
+    // Función para que el propietario retire todo el tokenA del contrato
+    function withdrawOwner() external onlyOwner {
+        uint256 amount = tokenA.balanceOf(address(this));
+        require(amount > 0, "No TokenA to withdraw");
+
+        // Transferimos todo el tokenA al propietario
+        tokenA.safeTransfer(owner, amount);
+        // Emitimos un evento para registrar el retiro del propietario
+        emit OwnerWithdraw(amount);
+    }
+}
