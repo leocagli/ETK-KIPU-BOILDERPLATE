@@ -1,0 +1,90 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.26;
+
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+/// @title Swapper
+/// @notice Este contrato permite el intercambio de dos tokens ERC20 en una relación 1:1
+contract Swapper {
+    using SafeERC20 for IERC20;
+
+    // Tokens que se intercambiarán
+    IERC20 public immutable tokenA;
+    IERC20 public immutable tokenB;
+    address public immutable owner;
+
+    // Seguimiento de los saldos de TokenA de los usuarios
+    mapping(address => uint256) public balances;
+
+    // Eventos para registrar acciones importantes
+    event Deposit(address indexed user, uint256 amount);
+    event OwnerDeposit(uint256 amount);
+    event Swap(address indexed user, uint256 amount);
+    event Withdraw(address indexed user, uint256 amount);
+    event OwnerWithdraw(uint256 amount);
+
+    /// @notice Restringe el acceso solo al propietario del contrato
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not owner");
+        _;
+    }
+
+    /// @notice Inicializa el contrato con las direcciones de los tokens
+    /// @param _tokenA Dirección del contrato de TokenA
+    /// @param _tokenB Dirección del contrato de TokenB
+    constructor(IERC20 _tokenA, IERC20 _tokenB) {
+        tokenA = _tokenA;
+        tokenB = _tokenB;
+        owner = msg.sender;
+    }
+    
+    /// @notice Permite a los usuarios depositar TokenA
+    /// @param amount Cantidad de TokenA a depositar
+    function deposit(uint256 amount) external {
+        require(amount > 0, "Amount must be > 0");
+        // Usa safeTransferFrom para manejar tokens que no devuelven un booleano
+        tokenA.safeTransferFrom(msg.sender, address(this), amount);
+        balances[msg.sender] += amount;
+        emit Deposit(msg.sender, amount);
+    }
+
+    /// @notice Permite al propietario depositar TokenB
+    /// @param amount Cantidad de TokenB a depositar
+    function depositOwner(uint256 amount) external onlyOwner {
+        require(amount > 0, "Amount must be > 0");
+        tokenB.safeTransferFrom(msg.sender, address(this), amount);
+        emit OwnerDeposit(amount);
+    }
+
+    /// @notice Realiza el intercambio de TokenA por TokenB
+    function swap() external {
+        uint256 amount = balances[msg.sender];
+        require(amount > 0, "No balance to swap");
+        require(tokenB.balanceOf(address(this)) >= amount, "Insufficient TokenB");
+
+        // Importante: actualizar el estado antes de la transferencia (patrón checks-effects-interactions)
+        balances[msg.sender] = 0;
+        tokenB.safeTransfer(msg.sender, amount);
+        emit Swap(msg.sender, amount);
+    }
+
+    /// @notice Permite a los usuarios retirar su TokenA depositado
+    function withdraw() external {
+        uint256 amount = balances[msg.sender];
+        require(amount > 0, "No balance to withdraw");
+
+        balances[msg.sender] = 0;
+        tokenA.safeTransfer(msg.sender, amount);
+        emit Withdraw(msg.sender, amount);
+    }
+
+    /// @notice Permite al propietario retirar todo el TokenA del contrato
+    function withdrawOwner() external onlyOwner {
+        uint256 amount = tokenA.balanceOf(address(this));
+        require(amount > 0, "No TokenA to withdraw");
+
+        tokenA.safeTransfer(owner, amount);
+        emit OwnerWithdraw(amount);
+    }
+}
